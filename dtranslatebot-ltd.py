@@ -1,8 +1,8 @@
 #!/usr/bin/python3
 # -*- coding: utf-8 -*-
 import json
-import requests
 import os
+import requests
 import subprocess
 import sys
 import time
@@ -33,6 +33,9 @@ def main():
 
     while True:
         try:
+            if lt.poll():
+                print("[Error] LibreTranslate is not running")
+                return lt.returncode
             r = requests.get("http://127.0.0.1:5000/languages", timeout=5)
             if r.status_code == 200:
                 break;
