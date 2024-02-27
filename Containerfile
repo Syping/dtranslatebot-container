@@ -1,22 +1,22 @@
-FROM almalinux:9
+FROM almalinux:9 AS build
 
 ARG DPP_COMMIT=9ccd5db6171862f85c481974a6b3acd6d3ae6741
-ARG DTB_COMMIT=7dcb64f7cf0244dac75b56d8e36dcceb1d683fde
+ARG DTB_COMMIT=912ac1eced6ae7762fdae0298137e69ff1566151
 
-RUN dnf install -y python3 python3-requests && \
-    dnf clean all
-RUN dnf install -y python3-pip && \
-    dnf clean all && \
-    mkdir -p /opt/libretranslate && \
+# Install build dependencies
+RUN dnf install -y yum-utils && \
+    dnf config-manager --set-enabled crb
+RUN dnf install -y cmake clang git ninja-build openssl-devel openssl-libs python3-pip zlib zlib-devel yum-utils
+
+# Install LibreTranslate in virtual environment
+RUN mkdir -p /opt/libretranslate && \
     python3 -m venv /opt/libretranslate && \
     source /opt/libretranslate/bin/activate && \
     pip3 install libretranslate==1.5.5 \ 
-        --extra-index-url https://download.pytorch.org/whl/cpu && \
-    dnf remove -y python3-pip
-RUN dnf install -y yum-utils && \
-    dnf config-manager --set-enabled crb && \
-    dnf install -y cmake clang git ninja-build openssl-devel openssl-libs zlib zlib-devel && \
-    mkdir -p /root/src && \
+        --extra-index-url https://download.pytorch.org/whl/cpu
+
+# Build libdpp and dtranslatebot
+RUN mkdir -p /root/src && \
     cd /root/src && \
     git clone https://github.com/brainboxdotcc/DPP.git dpp && \
     cd dpp && \
@@ -40,14 +40,20 @@ RUN dnf install -y yum-utils && \
         -DCMAKE_INSTALL_RPATH=/usr/local/lib64 \
         -GNinja && \
     cmake --build dtranslatebot-build && \
-    cmake --install dtranslatebot-build && \
-    cd /root && \
-    rm -rf \
-        /root/src \
-        /usr/local/include \
-        /usr/local/lib64/cmake \
-        /usr/local/lib64/pkgconfig && \
-    dnf remove -y cmake clang git openssl-devel yum-utils zlib-devel && \
+    cmake --install dtranslatebot-build
+
+# Copy built files and dtranslatebot-ltd
+RUN mkdir -p /root/destdir/opt && \
+    mkdir -p /root/destdir/usr/local/bin && \
+    mkdir -p /root/destdir/usr/local/lib64 && \
+    cp -R /opt/libretranslate /root/destdir/opt/ && \
+    cp /usr/local/bin/dtranslatebot /root/destdir/usr/local/bin/ && \
+    cp /usr/local/lib64/libdpp.so* /root/destdir/usr/local/lib64/
+COPY dtranslatebot-ltd.py /root/destdir/usr/local/bin/dtranslatebot-ltd
+
+# Build the image
+FROM almalinux:9
+RUN dnf install -y openssl-libs python3-requests zlib && \
     dnf clean all
-COPY dtranslatebot-ltd.py /usr/local/bin/dtranslatebot-ltd
+COPY --from=build /root/destdir/ /
 ENTRYPOINT ["/usr/local/bin/dtranslatebot-ltd"]
